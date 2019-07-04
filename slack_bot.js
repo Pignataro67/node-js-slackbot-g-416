@@ -5,63 +5,72 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const app = express();
 
+const TOKEN = '8cVJhp6TA0fU1gEsFawEussX';
+
+const hasValidToken = req => req.body.token === TOKEN;
+
+const getGithubUserData = username => rp({
+		uri: 'https://api.github.com/users/' + username,
+		headers: {
+        	'User-Agent': 'lair001'
+    	}
+	});
+
+const respondToRequestForGithubUserDate = (req, res) => {
+		const options = req.body.text.trim().split(/\s+/),
+			username = options[0],
+			requestedInfo = options[1];
+
+		return getGithubUserData(username)
+					.then(dataStr => res.send(
+						generateResponseToRequestForValidUserData(
+							dataStr, requestedInfo)))
+					.catch(err => {
+						const errMsg = { response_type: "ephemeral" };
+						if (err.statusCode === 404 || err.statusCode === '404') {
+							errMsg.text = `Unable to find user ${username}.`
+							res.status(404).send(errMsg);
+						} else {
+							const status = err.statusCode ? err.statusCode : 500;
+      						errMsg.text = "Oop! Something went wrong. Please try again.";
+      						res.status(status).send(errMsg);
+						}
+					});
+	};
+
+const generateResponseToRequestForValidUserData = (dataStr, requestedInfo) => {
+		const dataJson = JSON.parse(dataStr),
+			EOL = "\n",
+			response = { response_type: "ephemeral", mrkdwn: true };
+
+		response.text = '*Github User: @' + dataJson.login + ' (' + dataJson.name + ')*:' + EOL;
+
+		if (typeof requestedInfo === 'string' && /^\s*[a-zA-Z]/.test(requestedInfo)) {
+			response.text += '> ' + requestedInfo.charAt(0).toUpperCase() + requestedInfo.slice(1) + ': ';
+    		response.text += dataJson[requestedInfo] + EOL;
+		} else {
+			response.text += '> Company: ' + dataJson.company + EOL;
+    		response.text += '> Location: ' + dataJson.location + EOL;
+    		response.text += '> Hireable: ' + dataJson.hireable + EOL;
+    		response.text += '> Githup Profile: ' + dataJson.html_url + EOL;
+		}
+
+		return response;
+
+	};
+
 app.use(bodyParser.urlencoded({ extended: true }));
-const TOKEN = 'WEL1hWCWH8wdwP8kat2T9Nd5';
-const validRequest = (token) => {
-  return TOKEN == token;
-};
 
- const prepareResponse = (info, paramToGet) => {
-  let response = { response_type: "ephemeral", mrkdwn: true };
-  const newLine = '\n';
-  response.text = '*Github User: @' + info.login + ' (' + info.name + ')*:' + newLine;
-  if (!paramToGet) {
-    response.text += '> Company: ' + info.company + newLine;
-    response.text += '> Location: ' + info.location + newLine;
-    response.text += '> Hireable: ' + info.hireable + newLine;
-    response.text += '> Github Profile: ' + info.html_url + newLine;
-  }
-  else {
-    response.text += '> ' + paramToGet.charAt(0).toUpperCase() + paramToGet.slice(1) + ': ';
-    response.text += info[paramToGet];
-  }
-  return response;
-};
-
- app.get('/', (req,res) => {
-  res.send('ok');
+// Just an example request to get you started..
+app.get('/', (req, res) => {
+  res.send('Hello, World!');
 });
 
- app.post('/', (req, res) => {
-  if (!validRequest(req.body.token)) {
-    res.status(400).send();
-    return;
-  }
-  if (!req.body.text) {
-    res.status(400).send({
-      response_type: 'ephemeral',
-      text: "Please specify a user to find."
-    });
-    return;
-  }
-  const cmd = req.body.text.split(' '),
-        user = cmd[0],
-        paramToGet = cmd[1];
-  fetch(`https://api.github.com/users/${username}`).then((resp) => {
-    const result = JSON.parse(resp);
-    res.send(prepareResponse(result, paramToGet));
-  }).catch((err) => {
-    let errMsg = { response_type: "ephemeral" };
-    if('statusCode' in err && err.statusCode == 404) {
-      errMsg.text = "Sorry. Unable to find that user.";
-      res.status(err.statusCode).send(errMsg);
-    }
-    else {
-      const status = err.statusCode ? err.statusCode : 500;
-      errMsg.text = "Oops! Something went wrong. Please try again.";
-      res.status(status).send(errMsg);
-    }
-  });  
+app.post('/', (req, res) => {
+
+	if (!hasValidToken(req)) return res.status(400).send({ text: "Token is invalid." });
+	if (typeof req.body.text !== 'string' || !/^\s*[a-zA-Z0-9]/.test(req.body.text)) return res.status(400).send({ text: "Please specify a user to find."});
+	respondToRequestForGithubUserDate(req, res);
 });
 
 // This code "exports" a function 'listen` that can be used to start
